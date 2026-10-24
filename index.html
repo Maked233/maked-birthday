@@ -710,8 +710,11 @@ audio.addEventListener("ended", () => {
    ========================================================= */
 const wishGrid = $("wishGrid");
 const wishModeEl = $("wishMode");
-// 三种模式：Supabase（填了 key）> 本地小服务（http 打开且没填 key）> 本机 localStorage
-const SAME_ORIGIN_API = /^https?:$/.test(location.protocol) ? "/api/wishes" : "";
+// 三种模式：Supabase（填了 key）> 本地小服务（页面里被注入了 wish-api 标记）> 本机 localStorage
+// server.js 会在返回 index.html 时注入 <meta name="wish-api">；GitHub Pages 这类纯静态托管没有这个标记，
+// 所以不会去请求一个不存在的 /api/wishes。
+const API_TAG = document.querySelector('meta[name="wish-api"]');
+const SAME_ORIGIN_API = API_TAG ? API_TAG.getAttribute("content") : "";
 let REMOTE = (SUPABASE_URL && SUPABASE_ANON_KEY) ? "supabase" : (SAME_ORIGIN_API ? "server" : "");
 let SHARED = REMOTE !== "";
 const API_BASE = SUPABASE_URL.replace(/\/+$/, "");
