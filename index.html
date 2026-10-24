@@ -712,8 +712,8 @@ const wishGrid = $("wishGrid");
 const wishModeEl = $("wishMode");
 // 三种模式：Supabase（填了 key）> 本地小服务（http 打开且没填 key）> 本机 localStorage
 const SAME_ORIGIN_API = /^https?:$/.test(location.protocol) ? "/api/wishes" : "";
-const REMOTE = (SUPABASE_URL && SUPABASE_ANON_KEY) ? "supabase" : (SAME_ORIGIN_API ? "server" : "");
-const SHARED = REMOTE !== "";
+let REMOTE = (SUPABASE_URL && SUPABASE_ANON_KEY) ? "supabase" : (SAME_ORIGIN_API ? "server" : "");
+let SHARED = REMOTE !== "";
 const API_BASE = SUPABASE_URL.replace(/\/+$/, "");
 
 function setWishMode(text, cls) {
@@ -732,7 +732,7 @@ function loadWishes() {
   return SEED_WISHES.slice();
 }
 
-let wishes = SHARED ? [] : loadWishes();
+let wishes = loadWishes();
 let sharedReady = false;
 let submitting = false;
 
@@ -849,13 +849,28 @@ function renderWishes() {
 
 renderWishes();
 
-if (SHARED) {
-  setWishMode("同步中…");
-  refreshWishes();
-  setInterval(refreshWishes, 20000);
-} else {
-  setWishMode("本机存储", "local");
+// 探一下后端存不存在：GitHub Pages 这类纯静态托管没有 /api/wishes，
+// 就安静地退回本机模式，不要在页面上报红吓到访客。
+async function initWishes() {
+  if (!REMOTE) { setWishMode("本机存储", "local"); return; }
+  try {
+    const rows = await fetchWishes();
+    wishes = rows;
+    sharedReady = true;
+    setWishMode("共享 · 全站可见");
+    renderWishes();
+    setInterval(refreshWishes, 20000);
+  } catch (err) {
+    console.warn("没有可用后端，改用本机存储：", err);
+    REMOTE = "";
+    SHARED = false;
+    wishes = loadWishes();
+    setWishMode("本机存储", "local");
+    renderWishes();
+  }
 }
+
+initWishes();
 
 $("wishForm").addEventListener("submit", async (e) => {
   e.preventDefault();
