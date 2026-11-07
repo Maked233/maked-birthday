@@ -469,11 +469,24 @@ const WISHLIST = [
   { title: "超级兔子人", cover: "assets/covers/673750.webp", price: 58, original: 58, cut: 0, tags: ["平台游戏", "沙盒", "合作"], hue: 340 }
 ];
 
-// 种子祝福（本地没有记录时显示）
+// 种子祝福（本地没有记录时显示；2026-10-30 从线上数据导入 16 条）
 const SEED_WISHES = [
-  { name: "鲸娘", text: "主人，生日快乐。……我才不是准备了很久，只是顺手写了一句而已。", t: Date.now() - 1000 * 60 * 12 },
-  { name: "一个小访客", text: "愿你被这个世界温柔以待，也愿你永远有蛋糕吃。", t: Date.now() - 1000 * 60 * 60 * 5 },
-  { name: "老朋友", text: "新的一岁，少熬夜，多吃饭，想做的事都做成。", t: Date.now() - 1000 * 60 * 60 * 26 }
+  { name: "鲸娘", text: "主人，生日快乐。……我才不是特意准备好的，只是刚好想起今天而已。", t: 1792809000000 },
+  { name: "M", text: "よかった！ o~  鲸鲸", t: 1792813839858 },
+  { name: "马姐", text: "生日快乐", t: 1792814009634 },
+  { name: "林一", text: "提前祝贺你再次踏上轮回", t: 1792814396542 },
+  { name: "李暮白", text: "希望你能在生日那一天运气爆棚！", t: 1792814706711 },
+  { name: "匿名访客", text: "提前祝你生日快乐", t: 1792816343675 },
+  { name: "苹果", text: "提前祝你生日快乐", t: 1792817921314 },
+  { name: "leo博轩", text: "宝宝我爱你", t: 1792820122632 },
+  { name: "劳煊", text: "提前祝你生日快乐", t: 1792820276249 },
+  { name: "漂唱的笛客", text: "生日快乐", t: 1792822414790 },
+  { name: "轩", text: "嗨皮波斯兔油，生日快乐◐⩊◑  ྀི", t: 1792823378576 },
+  { name: "匿名访客", text: "生日快乐*^O^*", t: 1792823460817 },
+  { name: "匿名访客", text: "生日快乐，天天开心", t: 1792824749369 },
+  { name: "しゅじん", text: "お誕生日おめでとうございます。祝你生日当天十连满命抽卡不歪😘", t: 1792838919102 },
+  { name: "小宋", text: "誕生日おめでとうございます。  毎日楽しく過ごしてください。", t: 1792901868299 },
+  { name: "Die Yin", text: "生日快乐", t: 1792904224025 }
 ];
 
 // ==== 共享祝福（Supabase）配置：两项都填了才会启用共享模式，留空就是本机存储 ====
@@ -714,7 +727,8 @@ const wishModeEl = $("wishMode");
 // server.js 会在返回 index.html 时注入 <meta name="wish-api">；GitHub Pages 这类纯静态托管没有这个标记，
 // 所以不会去请求一个不存在的 /api/wishes。
 const API_TAG = document.querySelector('meta[name="wish-api"]');
-const SAME_ORIGIN_API = API_TAG ? API_TAG.getAttribute("content") : "";
+const API_ROOT = API_TAG ? API_TAG.getAttribute("content") : "";
+const SAME_ORIGIN_API = API_ROOT ? API_ROOT + "/wishes" : "";
 let REMOTE = (SUPABASE_URL && SUPABASE_ANON_KEY) ? "supabase" : (SAME_ORIGIN_API ? "server" : "");
 let SHARED = REMOTE !== "";
 const API_BASE = SUPABASE_URL.replace(/\/+$/, "");
@@ -929,18 +943,114 @@ $("wishForm").addEventListener("submit", async (e) => {
 });
 
 /* =========================================================
-   7. 戳一戳
+   7. 戳一戳 / 吃蛋糕（计数：有后端就全站共享，没有就存本机）
    ========================================================= */
 const pokeBtn = $("pokeBtn");
 const pokeCount = $("pokeCount");
 const pokeLayer = $("pokeLayer");
-let pokes = Number(localStorage.getItem(LS_POKE) || 0) || 0;
-pokeCount.textContent = pokes;
+const cakeBtn = $("cakeBtn");
+const cakeCount = $("cakeCount");
+
+// 纯静态托管（GitHub Pages）没有后端：本机没存过时用线上数据作初始值
+const SEED_POKE = 1001;
+const SEED_CAKE = 507;
+const storedPoke = localStorage.getItem(LS_POKE);
+const storedCake = localStorage.getItem(LS_CAKE);
+const counters = {
+  poke: storedPoke === null ? SEED_POKE : (Number(storedPoke) || 0),
+  cake: storedCake === null ? SEED_CAKE : (Number(storedCake) || 0)
+};
+let countersShared = false;
+
+function renderCounters() {
+  pokeCount.textContent = counters.poke;
+  cakeCount.textContent = counters.cake;
+  if (counters.cake > 0) {
+    cakeBtn.classList.add("lit");
+    cakeBtn.setAttribute("aria-pressed", "true");
+  }
+}
+
+function saveLocalCounter(type) {
+  try {
+    localStorage.setItem(type === "poke" ? LS_POKE : LS_CAKE, String(counters[type]));
+  } catch (e) {}
+}
+
+async function fetchCounters() {
+  if (REMOTE === "supabase") {
+    const res = await fetch(API_BASE + "/rest/v1/counters?select=name,value", { headers: apiHeaders() });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const rows = await res.json();
+    const out = { poke: 0, cake: 0 };
+    for (const r of rows) if (r.name in out) out[r.name] = Number(r.value) || 0;
+    return out;
+  }
+  const res = await fetch(API_ROOT + "/counters", { cache: "no-store" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const j = await res.json();
+  return { poke: Number(j.poke) || 0, cake: Number(j.cake) || 0 };
+}
+
+async function postCounter(type) {
+  if (REMOTE === "supabase") {
+    const res = await fetch(API_BASE + "/rest/v1/rpc/increment_counter", {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify({ counter: type })
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return Number(await res.json());
+  }
+  const res = await fetch(API_ROOT + "/counters", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type })
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const j = await res.json();
+  return Number(j[type]);
+}
+
+async function bumpCounter(type) {
+  counters[type]++;
+  renderCounters();
+  if (!countersShared) { saveLocalCounter(type); return; }
+  try {
+    const v = await postCounter(type);
+    if (Number.isFinite(v) && v >= counters[type]) { counters[type] = v; renderCounters(); }
+  } catch (err) {
+    console.warn("计数同步失败：", err);
+  }
+}
+
+async function initCounters() {
+  renderCounters();
+  if (!REMOTE) return;
+  try {
+    const c = await fetchCounters();
+    counters.poke = c.poke;
+    counters.cake = c.cake;
+    countersShared = true;
+    renderCounters();
+    setInterval(async () => {
+      if (!countersShared) return;
+      try {
+        const c2 = await fetchCounters();
+        counters.poke = c2.poke;
+        counters.cake = c2.cake;
+        renderCounters();
+      } catch (e) {}
+    }, 8000);
+  } catch (err) {
+    console.warn("计数器没有后端，用本机数据：", err);
+  }
+}
+
+initCounters();
 
 pokeBtn.addEventListener("click", () => {
-  pokes++;
-  pokeCount.textContent = pokes;
-  try { localStorage.setItem(LS_POKE, String(pokes)); } catch (e) {}
+  bumpCounter("poke");
 
   pokeBtn.classList.remove("bump");
   void pokeBtn.offsetWidth;
@@ -965,22 +1075,8 @@ pokeBtn.addEventListener("click", () => {
   }
 });
 
-/* =========================================================
-   8. 吃蛋糕
-   ========================================================= */
-const cakeBtn = $("cakeBtn");
-const cakeCount = $("cakeCount");
-let cakes = Number(localStorage.getItem(LS_CAKE) || 0) || 0;
-cakeCount.textContent = cakes;
-if (cakes > 0) {
-  cakeBtn.classList.add("lit");
-  cakeBtn.setAttribute("aria-pressed", "true");
-}
-
 cakeBtn.addEventListener("click", () => {
-  cakes++;
-  cakeCount.textContent = cakes;
-  try { localStorage.setItem(LS_CAKE, String(cakes)); } catch (e) {}
+  bumpCounter("cake");
 
   cakeBtn.classList.add("lit");
   cakeBtn.setAttribute("aria-pressed", "true");
